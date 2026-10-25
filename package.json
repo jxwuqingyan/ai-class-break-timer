@@ -52,7 +52,7 @@
       "identity": null
     },
     "dmg": {
-      "title": "课件休息计时"
+      "title": "课件休息计时 ${version}${arch}"
     },
     "win": {
       "target": [
