@@ -48,7 +48,8 @@
         { "target": "zip", "arch": ["arm64", "x64"] }
       ],
       "darkModeSupport": true,
-      "hardenedRuntime": false
+      "hardenedRuntime": false,
+      "identity": null
     },
     "dmg": {
       "title": "课件休息计时"
