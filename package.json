@@ -12,9 +12,9 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --enable-logging",
-    "pack:mac": "electron-builder --mac",
-    "pack:win": "electron-builder --win --x64",
-    "pack:all": "electron-builder -m -w --x64"
+    "pack:mac": "electron-builder --mac --publish never",
+    "pack:win": "electron-builder --win --x64 --publish never",
+    "pack:all": "electron-builder -m -w --x64 --publish never"
   },
   "devDependencies": {
     "electron": "^33.0.0",
