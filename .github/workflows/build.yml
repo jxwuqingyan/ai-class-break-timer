@@ -30,7 +30,6 @@ jobs:
             artifact: mac-packages
             glob: |
               dist/*.dmg
-              dist/*.zip
           - platform: windows
             os: windows-latest
             script: pack:win
