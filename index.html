@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#040806" />
-<title>课件休息计时</title>
+<title>课间休息计时</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; }
 
@@ -851,7 +851,7 @@
   </div>
 
   <div class="drawer-foot">
-    课件休息计时 · v1.0<br />
+    课间休息计时 · v1.0<br />
     快捷键：空格 / R / F / S / Esc
   </div>
 </aside>
@@ -1419,8 +1419,8 @@
       els.timeText.textContent = timeStr;
       lastTimeStr = timeStr;
       document.title = (timer.running || timer.remaining < timer.total)
-        ? timeStr + ' · 课件休息计时'
-        : '课件休息计时';
+        ? timeStr + ' · 课间休息计时'
+        : '课间休息计时';
     }
 
     if (showTenths) {
@@ -2280,7 +2280,7 @@
     // 投屏端：只负责显示，不绑定任何控件
     if (IS_MIRROR) {
       document.body.classList.add('mirror');
-      document.title = '投屏端 · 课件休息计时';
+      document.title = '投屏端 · 课间休息计时';
       initMirror();
       requestAnimationFrame((t) => {
         lastDraw = t;

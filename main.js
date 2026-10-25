@@ -31,7 +31,7 @@ function createWindow() {
     minHeight: 480,
     show: false,
     backgroundColor: '#040806',
-    title: '课件休息计时',
+    title: '课间休息计时',
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
     trafficLightPosition: isMac ? { x: 16, y: 16 } : undefined,
     autoHideMenuBar: true,
@@ -108,7 +108,7 @@ function openMirror() {
     height: Math.max(400, Math.min(800, target.bounds.height - 80)),
     frame: false,
     backgroundColor: '#040806',
-    title: '投屏端 · 课件休息计时',
+    title: '投屏端 · 课间休息计时',
     skipTaskbar: true,
     show: false,
     webPreferences: {
@@ -168,7 +168,7 @@ function trayMenuTemplate() {
       click: () => { mirrorOpen ? closeMirror() : openMirror(); }
     },
     { type: 'separator' },
-    { label: '退出课件休息计时', click: () => { isQuitting = true; app.quit(); } }
+    { label: '退出课间休息计时', click: () => { isQuitting = true; app.quit(); } }
   ];
 }
 
@@ -184,7 +184,7 @@ function createTray() {
     if (img.isEmpty()) return;
     img = img.resize({ width: isMac ? 18 : 20, height: isMac ? 18 : 20 });
     tray = new Tray(img);
-    tray.setToolTip('课件休息计时');
+    tray.setToolTip('课间休息计时');
     rebuildTrayMenu();
     if (!isMac) tray.on('click', () => showWindow());
   } catch (e) {
@@ -201,7 +201,7 @@ function buildMenu() {
       ? [{
           label: app.name,
           submenu: [
-            { role: 'about', label: '关于 课件休息计时' },
+            { role: 'about', label: '关于 课间休息计时' },
             { type: 'separator' },
             { role: 'hide', label: '隐藏' },
             { role: 'hideOthers', label: '隐藏其他' },

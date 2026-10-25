@@ -1,8 +1,8 @@
 {
   "name": "class-break-timer",
-  "productName": "课件休息计时",
+  "productName": "课间休息计时",
   "version": "1.0.0",
-  "description": "教师课件休息倒计时工具：代码雨动态背景 + 精确秒级倒计时 + 下课铃声",
+  "description": "教师课间休息倒计时工具：代码雨动态背景 + 精确秒级倒计时 + 下课铃声",
   "main": "main.js",
   "author": {
     "name": "wuqy"
@@ -22,7 +22,7 @@
   },
   "build": {
     "appId": "com.wuqy.classbreaktimer",
-    "productName": "课件休息计时",
+    "productName": "课间休息计时",
     "copyright": "Copyright © 2026",
     "directories": {
       "output": "dist",
@@ -51,7 +51,13 @@
       "identity": null
     },
     "dmg": {
-      "title": "课件休息计时 ${version}${arch}"
+      "title": "课间休息计时 ${version}${arch}",
+      "background": "build/dmg-background.png",
+      "window": { "width": 660, "height": 400 },
+      "contents": [
+        { "x": 180, "y": 290, "type": "file" },
+        { "x": 480, "y": 290, "type": "link", "path": "/Applications" }
+      ]
     },
     "win": {
       "target": [

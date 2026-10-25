@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-`课件休息计时`（Class Break Timer）：教师讲课用的课间休息倒计时工具。核心是一套「无框架、无构建」的代码 —— 一个 `index.html` 承载全部界面 + 样式 + 逻辑，外加一个 Electron 外壳，覆盖 **Web / macOS / Windows** 三端。
+`课间休息计时`（Class Break Timer）：教师讲课用的课间休息倒计时工具。核心是一套「无框架、无构建」的代码 —— 一个 `index.html` 承载全部界面 + 样式 + 逻辑，外加一个 Electron 外壳，覆盖 **Web / macOS / Windows** 三端。
 
 ## 架构（务必先理解，别乱改）
 

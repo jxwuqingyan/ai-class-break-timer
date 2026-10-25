@@ -1,4 +1,4 @@
-# 课件休息计时 · Class Break Timer
+# 课间休息计时 · Class Break Timer
 
 讲课时给学生放一段**代码雨背景的休息倒计时**。一分钟设定、精确秒级倒计时、到点响铃，投到教室大屏上不刺眼、不花哨。
 
@@ -121,7 +121,7 @@ npm run pack:win     # dist/ 下的安装包 + 免安装版（x64）
 > ⚠️ **跨平台打包限制**：macOS 上可直接打 mac 包；Windows 包 electron-builder 会自动下载 wine 完成（本机已验证可打）。若遇到问题，也可跑 `.github/workflows/build.yml`（推 `v*` tag 自动产出双平台）。
 
 打包产物默认未签名：
-- macOS 首次打开需右键 →「打开」，或执行 `xattr -dr com.apple.quarantine /Applications/课件休息计时.app`
+- macOS 首次打开需右键 →「打开」，或执行 `xattr -dr com.apple.quarantine /Applications/课间休息计时.app`
 - Windows 首次运行 SmartScreen 会提示，点「更多信息 → 仍要运行」
 
 ---
