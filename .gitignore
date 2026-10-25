@@ -7,3 +7,4 @@ dist/
 .tmp-chrome/
 .tmpx/
 xipsidif
+.tmp-verify/
