@@ -1,0 +1,2334 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="matrix">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#040806" />
+<title>课件休息计时</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  /* hidden 属性优先级要高于 .icon-btn 等 display 规则 */
+  [hidden] { display: none !important; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: #040806;
+    color: #eafff5;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+                 "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background-color .45s ease;
+  }
+
+  /* ---------- 背景：代码雨 ---------- */
+  #rain {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    display: block;
+  }
+
+  /* 暗角 + 中心压暗，保证数字可读 */
+  .veil {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background:
+      linear-gradient(180deg, rgba(0, 0, 0, .62) 0%, rgba(0, 0, 0, 0) 130px),
+      linear-gradient(0deg, rgba(0, 0, 0, .55) 0%, rgba(0, 0, 0, 0) 170px),
+      radial-gradient(120% 88% at 50% 45%,
+        rgba(0, 0, 0, .58) 0%,
+        rgba(0, 0, 0, .48) 26%,
+        rgba(0, 0, 0, .26) 52%,
+        rgba(0, 0, 0, .06) 76%,
+        rgba(0, 0, 0, .34) 100%);
+    transition: opacity .35s ease;
+  }
+
+  /* 轻微扫描线质感 */
+  .scanlines {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    opacity: .18;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, .045) 0px,
+      rgba(255, 255, 255, .045) 1px,
+      transparent 1px,
+      transparent 3px);
+    mix-blend-mode: overlay;
+  }
+
+  .flash {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    pointer-events: none;
+    background: #fff;
+    opacity: 0;
+  }
+  .flash.on { animation: flashOut .9s ease-out both; }
+  @keyframes flashOut {
+    0%   { opacity: .5; }
+    100% { opacity: 0; }
+  }
+
+  /* ---------- 顶栏 ---------- */
+  .topbar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 16px;
+    padding: 18px 24px calc(18px + env(safe-area-inset-top, 0px));
+    transition: opacity .3s ease, transform .3s ease;
+  }
+  /* macOS 红绿灯避让 */
+  body.is-mac .topbar { padding-left: 92px; }
+
+  /* 左侧占位，让中间的模式开关保持居中 */
+  .topbar-spacer { min-width: 0; }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  .wallclock {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    letter-spacing: .06em;
+    margin-right: 4px;
+  }
+
+  .icon-btn {
+    -webkit-app-region: no-drag;
+    width: 36px; height: 36px;
+    display: grid;
+    place-items: center;
+    border-radius: 11px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, .04);
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    transition: all .18s ease;
+  }
+  .icon-btn:hover {
+    color: var(--accent);
+    border-color: var(--line-strong);
+    background: rgba(255, 255, 255, .07);
+  }
+  .icon-btn:active { transform: scale(.94); }
+  .icon-btn svg { display: block; }
+
+  /* ---------- 模式切换 ---------- */
+  .mode-switch {
+    display: flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, .04);
+    -webkit-app-region: no-drag;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  .mode-switch button {
+    font: inherit;
+    font-size: 12.5px;
+    letter-spacing: .04em;
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    border-radius: 9px;
+    padding: 6px 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color .18s ease, background .18s ease;
+  }
+  .mode-switch button:hover:not(.active) { color: #fff; }
+  .mode-switch button.active {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  /* ---------- 投屏端：只留大字与代码雨 ---------- */
+  body.mirror .topbar,
+  body.mirror .presets,
+  body.mirror .controls,
+  body.mirror .hint,
+  body.mirror .drawer,
+  body.mirror .scrim { display: none !important; }
+  body.mirror .stage { padding: 0 24px; }
+  body.mirror .status { font-size: clamp(16px, 2vw, 26px); letter-spacing: .3em; }
+
+  /* ---------- 舞台 ---------- */
+  .stage {
+    position: relative;
+    z-index: 10;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    padding: 84px 24px 56px;
+    text-align: center;
+  }
+
+  .status {
+    font-size: clamp(13px, 1.5vw, 18px);
+    letter-spacing: .28em;
+    text-indent: .28em;
+    color: var(--muted);
+    min-height: 1.6em;
+    transition: color .3s ease, font-size .35s ease;
+  }
+
+  .time {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: clamp(84px, 20vw, 300px);
+    line-height: 1.02;
+    letter-spacing: -.035em;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    color: var(--accent);
+    text-shadow:
+      0 0 2px rgba(255, 255, 255, .25),
+      0 0 34px color-mix(in srgb, var(--accent) 45%, transparent),
+      0 0 92px color-mix(in srgb, var(--accent) 22%, transparent);
+    transition: color .3s ease, opacity .35s ease;
+    margin: 6px 0 0;
+  }
+  .tenths {
+    font-size: .26em;
+    font-weight: 400;
+    letter-spacing: 0;
+    opacity: .42;
+    margin-left: .08em;
+    align-self: baseline;
+    color: var(--accent);
+  }
+  body.hide-tenths .tenths { display: none; }
+
+  .sub {
+    margin-top: 12px;
+    font-size: clamp(12px, 1.35vw, 16px);
+    color: var(--muted);
+    letter-spacing: .06em;
+    min-height: 1.5em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .progress {
+    position: relative;
+    width: min(760px, 74vw);
+    height: 5px;
+    margin: 26px 0 0;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, .1);
+    overflow: hidden;
+  }
+  .progress > i {
+    position: absolute;
+    inset: 0;
+    transform-origin: left center;
+    transform: scaleX(1);
+    background: linear-gradient(90deg,
+      color-mix(in srgb, var(--accent) 55%, transparent),
+      var(--accent),
+      var(--accent-2));
+    box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 55%, transparent);
+    border-radius: 99px;
+    will-change: transform;
+  }
+
+  /* ---------- 预设 ---------- */
+  .presets {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 30px;
+    max-width: min(760px, 88vw);
+  }
+
+  .chip {
+    -webkit-app-region: no-drag;
+    padding: 9px 15px;
+    border-radius: 99px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, .035);
+    color: var(--muted);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition: all .16s ease;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .chip:hover { color: #fff; border-color: var(--line-strong); background: rgba(255, 255, 255, .08); }
+  .chip.active {
+    color: #04120b;
+    background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 40%, transparent);
+    font-weight: 600;
+  }
+
+  /* ---------- 控制按钮 ---------- */
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 26px;
+  }
+
+  .btn {
+    -webkit-app-region: no-drag;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 128px;
+    height: 48px;
+    padding: 0 26px;
+    border-radius: 14px;
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: .06em;
+    cursor: pointer;
+    border: 1px solid var(--line-strong);
+    background: rgba(255, 255, 255, .05);
+    color: #eafff5;
+    transition: transform .12s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  .btn:hover { background: rgba(255, 255, 255, .1); }
+  .btn:active { transform: scale(.97); }
+
+  .btn.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border-color: transparent;
+    color: #05130c;
+    font-weight: 650;
+    box-shadow: 0 8px 30px color-mix(in srgb, var(--accent) 26%, transparent);
+  }
+  .btn.primary:hover {
+    box-shadow: 0 10px 38px color-mix(in srgb, var(--accent) 42%, transparent);
+  }
+
+  .hint {
+    margin-top: 22px;
+    font-size: 12px;
+    color: rgba(234, 255, 245, .3);
+    letter-spacing: .04em;
+  }
+  .hint kbd {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 2px 5px;
+    border-radius: 5px;
+    border: 1px solid rgba(255, 255, 255, .12);
+    background: rgba(255, 255, 255, .05);
+    color: rgba(234, 255, 245, .55);
+    margin: 0 1px;
+  }
+
+  /* ---------- 结束 / 警告 状态 ---------- */
+  body.finished .status {
+    font-size: clamp(34px, 5.2vw, 74px);
+    letter-spacing: .1em;
+    text-indent: .1em;
+    color: var(--accent);
+    text-shadow: 0 0 44px color-mix(in srgb, var(--accent) 55%, transparent);
+    animation: popIn .5s cubic-bezier(.2, 1.4, .4, 1) both;
+  }
+  @keyframes popIn {
+    from { opacity: 0; transform: translateY(10px) scale(.94); }
+    to   { opacity: 1; transform: none; }
+  }
+  body.finished .time {
+    font-size: clamp(48px, 9vw, 124px);
+    opacity: .4;
+    transition: font-size .4s cubic-bezier(.2, 1, .3, 1), opacity .45s ease;
+  }
+  body.finished .sub { color: rgba(234, 255, 245, .68); }
+  body.finished .progress > i { background: var(--accent); }
+
+  body.warn .time { color: var(--danger); text-shadow: 0 0 40px rgba(255, 84, 112, .5); }
+  body.warn .time .tenths { color: var(--danger); }
+  body.warn .status { color: rgba(255, 84, 112, .75); }
+  body.warn .time { animation: warnPulse .95s ease-in-out infinite; }
+  @keyframes warnPulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.022); }
+  }
+
+  /* ---------- 专注模式（全屏时隐藏控件，0.9 秒后消失） ---------- */
+  body.focus-mode .topbar,
+  body.focus-mode .presets,
+  body.focus-mode .controls,
+  body.focus-mode .hint {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-6px);
+    transition: opacity .22s ease, transform .22s ease;
+  }
+  body.focus-mode.ui-visible .topbar,
+  body.focus-mode.ui-visible .presets,
+  body.focus-mode.ui-visible .controls,
+  body.focus-mode.ui-visible .hint {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+    transition: opacity .22s ease, transform .22s ease;
+  }
+
+  /* ---------- 设置抽屉 ---------- */
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(2, 6, 4, .5);
+    backdrop-filter: blur(2px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s ease;
+  }
+  .scrim.open { opacity: 1; pointer-events: auto; }
+
+  .drawer {
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    z-index: 50;
+    width: min(392px, 92vw);
+    padding: 22px 22px calc(26px + env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    background: rgba(8, 14, 12, .88);
+    border-left: 1px solid var(--line);
+    box-shadow: -24px 0 60px rgba(0, 0, 0, .55);
+    backdrop-filter: blur(26px) saturate(1.3);
+    -webkit-backdrop-filter: blur(26px) saturate(1.3);
+    transform: translateX(102%);
+    transition: transform .34s cubic-bezier(.32, .72, 0, 1);
+    color: #eafff5;
+  }
+  .drawer.open { transform: none; }
+
+  .drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+  .drawer-head h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: .08em;
+  }
+
+  .group {
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 4px 14px;
+    margin-bottom: 12px;
+    background: rgba(255, 255, 255, .022);
+  }
+  .group-title {
+    font-size: 11px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: rgba(234, 255, 245, .38);
+    padding: 12px 0 4px;
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 11px 0;
+    border-top: 1px solid rgba(255, 255, 255, .055);
+    font-size: 13.5px;
+    color: rgba(234, 255, 245, .82);
+    min-width: 0;
+  }
+  .group-title + .row { border-top: none; }
+  .row:first-child { border-top: none; }
+  .row .row-label { flex: 1 1 auto; min-width: 0; }
+  .row > select,
+  .row > input[type="text"],
+  .row > .field { flex: 0 0 auto; max-width: 56%; }
+  .row .row-label small {
+    display: block;
+    font-size: 11px;
+    color: rgba(234, 255, 245, .35);
+    margin-top: 3px;
+    letter-spacing: .02em;
+  }
+
+  .field {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  input[type="number"],
+  input[type="text"],
+  select {
+    -webkit-app-region: no-drag;
+    font-family: inherit;
+    font-size: 13px;
+    color: #eafff5;
+    background: rgba(255, 255, 255, .06);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 7px 9px;
+    outline: none;
+    transition: border-color .16s ease, background .16s ease;
+  }
+  input[type="number"] { width: 62px; text-align: center; font-variant-numeric: tabular-nums; }
+  input[type="text"] { width: 100%; }
+  select {
+    padding: 7px 8px;
+    cursor: pointer;
+    text-overflow: ellipsis;
+  }
+  input:focus, select:focus { border-color: var(--accent); background: rgba(255, 255, 255, .1); }
+  select option { background: #0a1210; color: #eafff5; }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 128px;
+    height: 4px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, .14);
+    outline: none;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 15px; height: 15px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent);
+    cursor: pointer;
+  }
+
+  /* 开关 */
+  .switch {
+    position: relative;
+    width: 44px; height: 25px;
+    flex: 0 0 auto;
+    cursor: pointer;
+  }
+  .switch input {
+    position: absolute;
+    opacity: 0;
+    width: 100%; height: 100%;
+    margin: 0;
+    cursor: pointer;
+  }
+  .switch span {
+    position: absolute;
+    inset: 0;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, .14);
+    transition: background .2s ease;
+    pointer-events: none;
+  }
+  .switch span::after {
+    content: "";
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 19px; height: 19px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform .2s cubic-bezier(.3, 1.4, .5, 1);
+  }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::after { transform: translateX(19px); }
+  .switch input:disabled + span { opacity: .3; cursor: not-allowed; }
+
+  .mini-btn {
+    -webkit-app-region: no-drag;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 6px 11px;
+    border-radius: 8px;
+    border: 1px solid var(--line-strong);
+    background: rgba(255, 255, 255, .05);
+    color: rgba(234, 255, 245, .8);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all .16s ease;
+  }
+  .mini-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+  .drawer-foot {
+    margin-top: 18px;
+    font-size: 11px;
+    line-height: 1.9;
+    color: rgba(234, 255, 245, .26);
+    text-align: center;
+  }
+
+  /* 小屏适配 */
+  @media (max-width: 560px) {
+    .stage { padding-top: 72px; }
+    .time { font-size: clamp(64px, 23vw, 120px); }
+    .controls .btn { min-width: 104px; height: 44px; padding: 0 18px; }
+    .hint { display: none; }
+    .wallclock { display: none; }
+  }
+</style>
+</head>
+<body class="idle">
+
+<canvas id="rain" aria-hidden="true"></canvas>
+<div class="veil" aria-hidden="true"></div>
+<div class="scanlines" aria-hidden="true"></div>
+<div class="flash" id="flash" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="topbar-spacer" aria-hidden="true"></div>
+
+  <div class="mode-switch" id="modeSwitch" role="tablist" aria-label="计时模式">
+    <button type="button" data-mode="timer" class="active">单次倒计时</button>
+    <button type="button" data-mode="class">课堂循环</button>
+  </div>
+
+  <div class="topbar-right">
+    <div class="wallclock" id="wallClock">--:--:--</div>
+    <button class="icon-btn" id="btnMirror" title="投屏到副屏 (M)" aria-label="投屏到副屏" hidden>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2.5" y="4.5" width="19" height="12.5" rx="2" />
+        <path d="M8 21h8M12 17v4" />
+      </svg>
+    </button>
+    <button class="icon-btn" id="btnFullscreen" title="全屏 / 退出全屏 (F)" aria-label="全屏">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 4H4v5M15 4h5v5M15 20h5v-5M9 20H4v-5" />
+      </svg>
+    </button>
+    <button class="icon-btn" id="btnSettings" title="设置 (S)" aria-label="设置">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+        <path d="M4 7h8M17.5 7H20M4 17h2.5M11.5 17H20" />
+        <circle cx="14.75" cy="7" r="2.3" />
+        <circle cx="8.25" cy="17" r="2.3" />
+      </svg>
+    </button>
+  </div>
+</header>
+
+<main class="stage">
+  <div class="status" id="statusText">准备开始</div>
+
+  <div class="time" id="timeWrap">
+    <span id="timeText">05:00</span><span class="tenths" id="tenthsText">.0</span>
+  </div>
+
+  <div class="sub" id="subText">共 5 分钟</div>
+
+  <div class="progress"><i id="progressBar"></i></div>
+
+  <div class="presets" id="presets"></div>
+
+  <div class="controls">
+    <button class="btn primary" id="btnStart">开始</button>
+    <button class="btn" id="btnReset">复位</button>
+  </div>
+
+  <div class="hint">
+    <kbd>空格</kbd> 开始 / 暂停 &nbsp;·&nbsp; <kbd>R</kbd> 复位 &nbsp;·&nbsp;
+    <kbd>S</kbd> 设置 &nbsp;·&nbsp; 全屏中 <kbd>点击</kbd> / <kbd>Esc</kbd> 退出
+  </div>
+</main>
+
+<div class="scrim" id="scrim"></div>
+
+<aside class="drawer" id="drawer" aria-label="设置面板">
+  <div class="drawer-head">
+    <h2>设置</h2>
+    <button class="icon-btn" id="btnCloseDrawer" aria-label="关闭">✕</button>
+  </div>
+
+  <div class="group">
+    <div class="group-title">时长</div>
+    <div class="row">
+      <div class="row-label">上课时长<small>「课堂循环」模式下的一节课长度</small></div>
+      <div class="field">
+        <input type="number" id="inpClassMinutes" min="1" max="180" step="1" value="45" />
+        <span style="color:rgba(234,255,245,.4);font-size:12px">分</span>
+      </div>
+    </div>
+    <div class="row">
+      <div class="row-label" id="durationLabel">休息时长<small>修改后立即复位计时器</small></div>
+      <div class="field">
+        <input type="number" id="inpMinutes" min="0" max="180" step="1" value="5" />
+        <span style="color:rgba(234,255,245,.4);font-size:12px">分</span>
+        <input type="number" id="inpSeconds" min="0" max="59" step="1" value="0" />
+        <span style="color:rgba(234,255,245,.4);font-size:12px">秒</span>
+      </div>
+    </div>
+    <div class="row" id="rowLoop">
+      <div class="row-label">循环模式<small>单次倒计时结束后自动重新开始</small></div>
+      <label class="switch"><input type="checkbox" id="chkLoop" /><span></span></label>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">铃声</div>
+    <div class="row">
+      <div class="row-label">下课铃<small>「上课」阶段结束时的铃声</small></div>
+      <div class="field">
+        <select id="selSound" style="width:108px">
+          <option value="chime">三声钟</option>
+          <option value="electric">校园电铃</option>
+          <option value="beep">三连提示</option>
+          <option value="none">静音</option>
+        </select>
+        <button class="mini-btn" id="btnTestSound">试听</button>
+      </div>
+    </div>
+    <div class="row">
+      <div class="row-label">上课铃<small>「休息」阶段结束时的铃声</small></div>
+      <div class="field">
+        <select id="selStartSound" style="width:108px">
+          <option value="chime">三声钟</option>
+          <option value="electric">校园电铃</option>
+          <option value="beep">三连提示</option>
+          <option value="none">静音</option>
+        </select>
+        <button class="mini-btn" id="btnTestStartSound">试听</button>
+      </div>
+    </div>
+    <div class="row">
+      <div class="row-label">音量</div>
+      <input type="range" id="inpVolume" min="0" max="1" step="0.02" value="0.7" />
+    </div>
+    <div class="row">
+      <div class="row-label">重复响铃</div>
+      <select id="selRepeats" style="width:110px">
+        <option value="1">1 次</option>
+        <option value="2">2 次</option>
+        <option value="3">3 次</option>
+        <option value="5">5 次</option>
+      </select>
+    </div>
+    <div class="row">
+      <div class="row-label">下课提示语<small>上课结束时</small></div>
+      <input type="text" id="inpClassEndText" maxlength="24" value="下课了，休息一下" style="width:150px" />
+    </div>
+    <div class="row">
+      <div class="row-label">上课提示语<small>休息结束时</small></div>
+      <input type="text" id="inpEndText" maxlength="24" value="时间到，该上课了" style="width:150px" />
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">语音播报</div>
+    <div class="row">
+      <div class="row-label">语音播报<small>阶段开始/即将结束时用中文念一句</small></div>
+      <label class="switch"><input type="checkbox" id="chkSpeech" checked /><span></span></label>
+    </div>
+    <div class="row">
+      <div class="row-label">提前播报</div>
+      <select id="selSpeechAt" style="width:110px">
+        <option value="0">关闭</option>
+        <option value="30">30 秒</option>
+        <option value="60">1 分钟</option>
+        <option value="120">2 分钟</option>
+        <option value="300">5 分钟</option>
+      </select>
+    </div>
+    <div class="row">
+      <div class="row-label">语速</div>
+      <input type="range" id="inpSpeechRate" min="0.7" max="1.4" step="0.05" value="1" />
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">提醒</div>
+    <div class="row">
+      <div class="row-label">结束前变色提醒<small>剩余时间进入该区间时变红闪烁</small></div>
+      <select id="selWarn" style="width:110px">
+        <option value="0">关闭</option>
+        <option value="5">5 秒</option>
+        <option value="10">10 秒</option>
+        <option value="20">20 秒</option>
+        <option value="30">30 秒</option>
+        <option value="60">60 秒</option>
+      </select>
+    </div>
+    <div class="row">
+      <div class="row-label">秒针滴答音<small>最后阶段每秒提示</small></div>
+      <label class="switch"><input type="checkbox" id="chkTick" checked /><span></span></label>
+    </div>
+    <div class="row">
+      <div class="row-label">显示十分之一秒</div>
+      <label class="switch"><input type="checkbox" id="chkTenths" checked /><span></span></label>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">外观</div>
+    <div class="row">
+      <div class="row-label">代码雨主题</div>
+      <select id="selTheme" style="width:130px"></select>
+    </div>
+    <div class="row">
+      <div class="row-label">代码雨字符<small>0/1 在投影上最容易辨认</small></div>
+      <select id="selCharset" style="width:130px"></select>
+    </div>
+    <div class="row">
+      <div class="row-label">代码雨背景</div>
+      <label class="switch"><input type="checkbox" id="chkRain" checked /><span></span></label>
+    </div>
+    <div class="row">
+      <div class="row-label">下落速度</div>
+      <input type="range" id="inpSpeed" min="0.3" max="2.4" step="0.1" value="1" />
+    </div>
+    <div class="row">
+      <div class="row-label">密度</div>
+      <input type="range" id="inpDensity" min="0.3" max="1.6" step="0.1" value="1" />
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">桌面端</div>
+    <div class="row">
+      <div class="row-label">副屏投送<small>在第二块屏幕全屏显示纯大字画面</small></div>
+      <div class="field">
+        <button class="mini-btn" id="btnMirrorPanel">投屏到副屏</button>
+      </div>
+    </div>
+    <div class="row">
+      <div class="row-label">窗口置顶<small>投影时不被其他窗口遮挡</small></div>
+      <label class="switch"><input type="checkbox" id="chkTop" /><span></span></label>
+    </div>
+    <div class="row">
+      <div class="row-label">播放时防止休眠<small>倒计时期间阻止屏幕睡眠</small></div>
+      <label class="switch"><input type="checkbox" id="chkSleep" checked /><span></span></label>
+    </div>
+    <div class="row">
+      <div class="row-label">关闭窗口时收到托盘<small>用托盘图标随时唤回</small></div>
+      <label class="switch"><input type="checkbox" id="chkTray" checked /><span></span></label>
+    </div>
+    <div class="row" id="webOnlyNote" hidden>
+      <div class="row-label" style="color:rgba(234,255,245,.45);font-size:12px">
+        以上两项仅在桌面客户端生效
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer-foot">
+    课件休息计时 · v1.0<br />
+    快捷键：空格 / R / F / S / Esc
+  </div>
+</aside>
+
+<script>
+(() => {
+  'use strict';
+
+  /* =========================================================
+   *  0. 基础工具
+   * ========================================================= */
+  const $ = (sel) => document.querySelector(sel);
+  const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+  const pad2 = (n) => String(n).padStart(2, '0');
+
+  /* 毫秒 → 人话时长：6 秒 / 5 分钟 / 5 分 30 秒 */
+  const fmtDur = (ms) => {
+    const m = Math.floor(ms / 60000);
+    const s = Math.round((ms % 60000) / 1000);
+    if (m === 0) return s + ' 秒';
+    if (s === 0) return m + ' 分钟';
+    return m + ' 分 ' + s + ' 秒';
+  };
+
+  const isDesktop = typeof window.desktop !== 'undefined' && window.desktop.isDesktop === true;
+
+  /* 投屏端：?mirror=1（桌面端副屏窗口）或 #mirror（浏览器另开一个标签页） */
+  const IS_MIRROR = /[?&]mirror=1/.test(location.search) || location.hash === '#mirror';
+
+  /* 主窗口 → 投屏端的状态广播（桌面端走 IPC，Web 端走 BroadcastChannel） */
+  const bus = (() => {
+    if (isDesktop && window.desktop.onState) {
+      return {
+        live: true,
+        send: (state) => window.desktop.sendState(state),
+        on: (cb) => window.desktop.onState(cb)
+      };
+    }
+    try {
+      const bc = new BroadcastChannel('cbt-sync');
+      return {
+        live: true,
+        send: (state) => bc.postMessage(state),
+        on: (cb) => { bc.onmessage = (e) => cb(e.data); }
+      };
+    } catch (e) {
+      return { live: false, send() {}, on() {} };
+    }
+  })();
+
+  /* =========================================================
+   *  1. 主题
+   * ========================================================= */
+  const THEMES = {
+    matrix: { label: '矩阵绿', accent: '#3dff9a', accent2: '#00e5c0', rain: [61, 255, 154],  bg: '#040806' },
+    cyber:  { label: '赛博青', accent: '#3fd8ff', accent2: '#6f8bff', rain: [63, 216, 255],  bg: '#03070e' },
+    neon:   { label: '霓虹紫', accent: '#c58bff', accent2: '#ff7bd5', rain: [176, 120, 255], bg: '#07030d' },
+    amber:  { label: '暖琥珀', accent: '#ffb547', accent2: '#ff8a3d', rain: [255, 168, 60],  bg: '#0b0603' },
+    ice:    { label: '冰蓝白', accent: '#eaf6ff', accent2: '#8fd0ff', rain: [190, 225, 255], bg: '#04070c' }
+  };
+
+  /* =========================================================
+   *  2. 设置持久化
+   * ========================================================= */
+  const STORE_KEY = 'cbt.settings.v1';
+
+  const DEFAULTS = {
+    mode: 'timer',        // 'timer' 单次倒计时 | 'class' 课堂循环
+    minutes: 5,
+    seconds: 0,
+    classMinutes: 45,
+    endText: '时间到，该上课了',        // 休息结束 / 单次倒计时结束
+    classEndText: '下课了，休息一下',    // 课堂循环里「上课」阶段结束
+    sound: 'chime',       // 下课铃
+    startSound: 'chime',  // 上课铃
+    volume: 0.7,
+    repeats: 3,
+    warnAt: 10,
+    tick: true,
+    speech: true,
+    speechAt: 60,
+    speechRate: 1,
+    theme: 'matrix',
+    charset: 'binary',    // 代码雨字符集：binary / kana / mixed
+    showTenths: true,
+    loop: false,
+    alwaysOnTop: false,
+    preventSleep: true,
+    closeToTray: true,
+    rain: true,
+    rainSpeed: 1,
+    rainDensity: 1
+  };
+
+  let S = Object.assign({}, DEFAULTS, loadSettings());
+
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      const saved = raw ? JSON.parse(raw) : {};
+      // 旧版默认文案迁移：以前统一是「时间到，休息一下」
+      if (saved.endText === '时间到，休息一下') saved.endText = '时间到，该上课了';
+      return saved;
+    } catch (e) {
+      return {};
+    }
+  }
+
+  let saveTimer = null;
+  function saveSettings() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try {
+        localStorage.setItem(STORE_KEY, JSON.stringify(S));
+      } catch (e) { /* 忽略隐私模式下的写入失败 */ }
+    }, 180);
+  }
+
+  /* =========================================================
+   *  3. 音频（WebAudio 合成，无需外部音频文件）
+   * ========================================================= */
+  let ac = null;
+  let master = null;
+
+  function audio() {
+    if (!ac) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+      ac = new Ctx();
+      master = ac.createGain();
+      master.gain.value = S.volume;
+      master.connect(ac.destination);
+    }
+    if (ac.state === 'suspended') ac.resume();
+    master.gain.value = S.volume;
+    return ac;
+  }
+
+  function setVolume(v) {
+    S.volume = clamp(v, 0, 1);
+    if (master) master.gain.value = S.volume;
+  }
+
+  /* 单次钟声：多个泛音 + 指数衰减 */
+  function strikeBell(ctx, at, base, peak, dur) {
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, at);
+    env.gain.exponentialRampToValueAtTime(peak, at + 0.008);
+    env.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    env.connect(master);
+
+    const partials = [[1, 1], [2.0, 0.46], [2.98, 0.24], [4.07, 0.13], [5.42, 0.07]];
+    partials.forEach(([mult, amp]) => {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = base * mult;
+      const g = ctx.createGain();
+      g.gain.value = amp;
+      o.connect(g).connect(env);
+      o.start(at);
+      o.stop(at + dur + 0.05);
+    });
+  }
+
+  /* 电铃：三角波 + 方波，被 18Hz 方波调幅，形成“叮铃铃”的抖动 */
+  function electricBell(ctx, at, dur) {
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, at);
+    env.gain.linearRampToValueAtTime(0.5, at + 0.02);
+    env.gain.setValueAtTime(0.5, at + dur - 0.18);
+    env.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    env.connect(master);
+
+    const amp = ctx.createGain();
+    amp.gain.value = 0.5;
+    amp.connect(env);
+
+    const lfo = ctx.createOscillator();
+    lfo.type = 'square';
+    lfo.frequency.value = 18;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 0.5;
+    lfo.connect(lfoGain).connect(amp.gain);
+
+    const o1 = ctx.createOscillator();
+    o1.type = 'triangle';
+    o1.frequency.value = 1180;
+    const g1 = ctx.createGain();
+    g1.gain.value = 0.6;
+    o1.connect(g1).connect(amp);
+
+    const o2 = ctx.createOscillator();
+    o2.type = 'square';
+    o2.frequency.value = 590;
+    const g2 = ctx.createGain();
+    g2.gain.value = 0.22;
+    o2.connect(g2).connect(amp);
+
+    [lfo, o1, o2].forEach((n) => {
+      n.start(at);
+      n.stop(at + dur + 0.05);
+    });
+  }
+
+  function beep(ctx, at, freq, dur) {
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.value = freq;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(0.5, at + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    o.connect(g).connect(master);
+    o.start(at);
+    o.stop(at + dur + 0.02);
+  }
+
+  function playBell(kind, times) {
+    if (kind === 'none') return;
+    const ctx = audio();
+    if (!ctx) return;
+    const t0 = ctx.currentTime + 0.03;
+    times = times || Number(S.repeats) || 1;
+
+    if (kind === 'electric') {
+      for (let i = 0; i < times; i++) electricBell(ctx, t0 + i * 1.5, 1.25);
+    } else if (kind === 'beep') {
+      for (let i = 0; i < times; i++) {
+        beep(ctx, t0 + i * 1.0,        880, 0.16);
+        beep(ctx, t0 + i * 1.0 + 0.19, 1108, 0.16);
+        beep(ctx, t0 + i * 1.0 + 0.38, 1318, 0.30);
+      }
+    } else {
+      for (let i = 0; i < times; i++) {
+        strikeBell(ctx, t0 + i * 1.35, 784, 0.42, 2.6);
+      }
+    }
+  }
+
+  /* 最后阶段的“滴答” */
+  function playTick() {
+    const ctx = audio();
+    if (!ctx) return;
+    const o = ctx.createOscillator();
+    o.type = 'square';
+    o.frequency.value = 1500;
+    const g = ctx.createGain();
+    const t = ctx.currentTime + 0.01;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.09, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.055);
+    o.connect(g).connect(master);
+    o.start(t);
+    o.stop(t + 0.07);
+  }
+
+  /* =========================================================
+   *  3.5 语音播报（Web Speech API，系统原生中文音色）
+   * ========================================================= */
+  let zhVoice = null;
+
+  function pickVoice() {
+    if (!('speechSynthesis' in window)) return;
+    const list = speechSynthesis.getVoices() || [];
+    // 优先 zh-CN 的本地音色（离线可用），其次任何中文音色
+    zhVoice = list.find((v) => /^zh[-_]CN/i.test(v.lang) && v.localService)
+           || list.find((v) => /^zh/i.test(v.lang))
+           || list.find((v) => /Chinese|中文|普通话|Tingting|Meijia/i.test(v.name + v.lang))
+           || null;
+  }
+
+  if ('speechSynthesis' in window) {
+    pickVoice();
+    speechSynthesis.addEventListener('voiceschanged', pickVoice);
+  }
+
+  function speak(text) {
+    if (IS_MIRROR || !S.speech || !text) return;
+    if (!('speechSynthesis' in window)) return;
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'zh-CN';
+      u.rate = clamp(Number(S.speechRate) || 1, 0.7, 1.4);
+      u.pitch = 1;
+      u.volume = 1;
+      if (zhVoice) u.voice = zhVoice;
+      speechSynthesis.speak(u);
+    } catch (e) { /* 某些环境不支持，静默降级 */ }
+  }
+
+  /* 把秒数说成人话：90 → 一分半，60 → 一分钟，30 → 三十秒 */
+  function secondsToSpeech(sec) {
+    if (sec >= 60) {
+      const m = Math.floor(sec / 60);
+      const r = sec % 60;
+      if (r === 0) return m + ' 分钟';
+      if (r === 30) return m + ' 分半';
+      return m + ' 分 ' + r + ' 秒';
+    }
+    if (sec === 30) return '三十秒';
+    if (sec === 15) return '十五秒';
+    return sec + ' 秒';
+  }
+
+  function announceStart(phase) {
+    if (!S.speech) return;
+    if (S.mode === 'class') {
+      if (phase === 'class') speak('开始上课，' + fmtDur(timer.total));
+      else speak('下课了，休息 ' + fmtDur(timer.total));
+    } else {
+      speak('开始计时，' + fmtDur(timer.total));
+    }
+  }
+
+  /* =========================================================
+   *  4. 计时核心
+   * ========================================================= */
+  const timer = {
+    phase: 'break',              // 'break' 休息 | 'class' 上课
+    total: 5 * 60 * 1000,
+    remaining: 5 * 60 * 1000,
+    endAt: 0,
+    running: false,
+    finished: false
+  };
+
+  let lastWarnSecond = null;
+  let loopTimeout = null;
+  let safetyTimer = null;
+  let announceDone = false;      // 本阶段是否已播报“即将结束”
+  let mirrorBase = null;         // 投屏端：用于本地插值的基准
+
+  const isClassMode = () => S.mode === 'class';
+  const isClassPhase = () => S.mode === 'class' && timer.phase === 'class';
+
+  /* 某个阶段的总时长 */
+  function phaseMs(phase) {
+    const raw = phase === 'class'
+      ? Number(S.classMinutes) * 60000
+      : (Number(S.minutes) * 60 + Number(S.seconds)) * 1000;
+    return clamp(raw, 1000, 180 * 60 * 1000);
+  }
+
+  /* 复位到某个阶段的起点（不自动开始） */
+  function setPhase(phase) {
+    clearTimeout(loopTimeout);
+    clearSafety();
+    timer.phase = phase;
+    timer.total = phaseMs(phase);
+    timer.remaining = timer.total;
+    timer.running = false;
+    timer.finished = false;
+    lastWarnSecond = null;
+    announceDone = false;
+    document.body.classList.remove('finished', 'warn');
+    releaseWake();
+    renderAll();
+  }
+
+  function startPhase(phase) {
+    setPhase(phase);
+    start();
+  }
+
+  /* 后备保险：标签页被隐藏时 rAF 会暂停，用定时器兜底触发结束铃声 */
+  function scheduleSafety() {
+    clearTimeout(safetyTimer);
+    const ms = Math.max(0, timer.remaining) + 120;
+    safetyTimer = setTimeout(() => {
+      if (timer.running && performance.now() >= timer.endAt) {
+        timer.remaining = 0;
+        finish();
+      }
+    }, ms);
+  }
+
+  function clearSafety() {
+    clearTimeout(safetyTimer);
+    safetyTimer = null;
+  }
+
+  /* 改时长一律回到当前阶段起点（与设置面板里的说明一致） */
+  function applyDuration() {
+    if (!isClassMode()) timer.phase = 'break';
+    setPhase(timer.phase);
+  }
+
+  function start() {
+    if (timer.running) return;
+    clearTimeout(loopTimeout);
+
+    if (timer.remaining <= 0) {
+      timer.remaining = timer.total;
+      timer.finished = false;
+      document.body.classList.remove('finished');
+    }
+    const fresh = timer.remaining === timer.total;
+    timer.endAt = performance.now() + timer.remaining;
+    timer.running = true;
+    lastWarnSecond = null;
+    announceDone = false;
+
+    lockWake();
+    audio(); // 用户手势内解锁音频
+    scheduleSafety();
+    enterFullscreen(); // 开始即全屏，聚焦倒计时（须在用户手势内同步调用）
+    if (fresh) announceStart(timer.phase);
+    renderAll();
+  }
+
+  function pause() {
+    if (!timer.running) return;
+    timer.remaining = Math.max(0, timer.endAt - performance.now());
+    timer.running = false;
+    clearSafety();
+    releaseWake();
+    renderAll();
+  }
+
+  function toggle() {
+    if (timer.running) pause();
+    else start();
+  }
+
+  function reset() {
+    clearTimeout(loopTimeout);
+    clearSafety();
+    timer.running = false;
+    timer.finished = false;
+    timer.remaining = timer.total;
+    lastWarnSecond = null;
+    announceDone = false;
+    document.body.classList.remove('finished', 'warn');
+    releaseWake();
+    renderAll();
+  }
+
+  function finish() {
+    if (timer.finished) return;
+    clearSafety();
+    timer.remaining = 0;
+    timer.running = false;
+    timer.finished = true;
+
+    document.body.classList.add('finished');
+    document.body.classList.remove('warn');
+    releaseWake();
+
+    // 课堂循环：上课结束 → 下课铃 + 「下课了，休息一下」
+    //            休息结束 → 上课铃 + 「时间到，该上课了」
+    const kind = isClassPhase()
+      ? S.sound
+      : (isClassMode() ? S.startSound : S.sound);
+    playBell(kind, Number(S.repeats) || 1);
+
+    speak(isClassPhase() ? S.classEndText : S.endText);
+
+    flashScreen();
+    renderAll();
+
+    if (isClassMode()) {
+      // 课堂循环：短暂停留后自动进入下一阶段
+      const next = isClassPhase() ? 'break' : 'class';
+      loopTimeout = setTimeout(() => startPhase(next), 3200);
+    } else if (S.loop) {
+      loopTimeout = setTimeout(() => { setPhase('break'); start(); }, 4000);
+    }
+  }
+
+  function flashScreen() {
+    const el = $('#flash');
+    el.classList.remove('on');
+    void el.offsetWidth;
+    el.classList.add('on');
+  }
+
+  /* 主循环：用 performance.now 的时间戳计算，绝不累加，因此不会漂移 */
+  function frame() {
+    // 投屏端不做本地计时，只按主窗口发来的基准插值
+    if (IS_MIRROR) {
+      if (mirrorBase && mirrorBase.running) {
+        timer.remaining = Math.max(0, mirrorBase.remaining - (performance.now() - mirrorBase.at));
+      }
+      renderTimer();
+      requestAnimationFrame(frame);
+      return;
+    }
+
+    if (timer.running) {
+      const rem = timer.endAt - performance.now();
+      if (rem <= 0) {
+        timer.remaining = 0;
+        finish();
+      } else {
+        timer.remaining = rem;
+        checkWarning();
+      }
+    }
+    renderTimer();
+    requestAnimationFrame(frame);
+  }
+
+  function checkWarning() {
+    const sec = Math.ceil(timer.remaining / 1000);
+
+    // 语音：到达设定秒数时播报一次
+    const at = Number(S.speechAt) || 0;
+    if (at > 0 && !announceDone && timer.total > at * 1000) {
+      if (sec === at) {
+        announceDone = true;
+        const tail = isClassPhase() ? '距离下课还有'
+          : (isClassMode() ? '距离上课还有' : '还剩');
+        speak(tail + secondsToSpeech(at));
+      }
+    }
+
+    // 变红提醒
+    const warnAt = Number(S.warnAt) || 0;
+    if (!warnAt || timer.total <= warnAt * 1000) {
+      document.body.classList.remove('warn');
+      return;
+    }
+    if (sec !== lastWarnSecond) {
+      lastWarnSecond = sec;
+      if (sec > 0 && sec <= warnAt && S.tick) playTick();
+    }
+    document.body.classList.toggle('warn', sec > 0 && sec <= warnAt);
+  }
+
+  /* =========================================================
+   *  5. 渲染
+   * ========================================================= */
+  const els = {
+    timeText: $('#timeText'),
+    tenthsText: $('#tenthsText'),
+    statusText: $('#statusText'),
+    subText: $('#subText'),
+    progressBar: $('#progressBar'),
+    btnStart: $('#btnStart'),
+    wallClock: $('#wallClock')
+  };
+
+  let lastTimeStr = '';
+  let lastTenthStr = '';
+  let lastStatusStr = '';
+  let lastSubStr = '';
+  let lastBtnStr = '';
+
+  function renderTimer() {
+    const classPhase = isClassPhase();
+    const remMs = Math.max(0, timer.remaining);
+    // 上课阶段显示「已上课时长」（正计时），其余阶段显示剩余
+    const shownMs = classPhase ? Math.max(0, timer.total - remMs) : remMs;
+    const showTenths = !!S.showTenths;
+
+    const wholeSec = (showTenths || classPhase)
+      ? Math.floor(shownMs / 1000)
+      : Math.ceil(shownMs / 1000);
+
+    const mm = Math.floor(wholeSec / 60);
+    const ss = wholeSec % 60;
+    const timeStr = pad2(mm) + ':' + pad2(ss);
+    if (timeStr !== lastTimeStr) {
+      els.timeText.textContent = timeStr;
+      lastTimeStr = timeStr;
+      document.title = (timer.running || timer.remaining < timer.total)
+        ? timeStr + ' · 课件休息计时'
+        : '课件休息计时';
+    }
+
+    if (showTenths) {
+      const t = '.' + Math.floor((shownMs % 1000) / 100);
+      if (t !== lastTenthStr) {
+        els.tenthsText.textContent = t;
+        lastTenthStr = t;
+      }
+    }
+
+    // 进度条始终表示「本阶段还剩多少」
+    const ratio = timer.total > 0 ? clamp(remMs / timer.total, 0, 1) : 0;
+    els.progressBar.style.transform = 'scaleX(' + ratio.toFixed(4) + ')';
+
+    let status;
+    let btn;
+    if (timer.finished) {
+      // 上课结束说「下课了，休息一下」；休息结束说「时间到，该上课了」
+      status = (classPhase ? S.classEndText : S.endText) || '时间到';
+      btn = S.mode === 'class' ? '下一阶段' : '再来一次';
+    } else if (timer.running) {
+      status = classPhase ? '上课中' : (S.mode === 'class' ? '休息中' : '倒计时中');
+      btn = '暂停';
+    } else if (timer.remaining < timer.total && timer.remaining > 0) {
+      status = '已暂停';
+      btn = '继续';
+    } else {
+      status = classPhase ? '准备上课' : (S.mode === 'class' ? '准备休息' : '准备开始');
+      btn = classPhase ? '开始上课' : (S.mode === 'class' ? '开始休息' : '开始');
+    }
+    if (status !== lastStatusStr) {
+      els.statusText.textContent = status;
+      lastStatusStr = status;
+    }
+    if (btn !== lastBtnStr) {
+      els.btnStart.textContent = btn;
+      lastBtnStr = btn;
+    }
+
+    const clockOf = (ms) => {
+      const d = new Date(Date.now() + ms);
+      return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    };
+
+    let sub;
+    if (timer.finished) {
+      sub = S.mode === 'class' ? '即将自动进入下一阶段…' : '点击「再来一次」或按 R 复位';
+    } else if (classPhase && timer.running) {
+      const left = pad2(Math.floor(remMs / 60000)) + ':' + pad2(Math.floor((remMs % 60000) / 1000));
+      sub = '距下课 ' + left + ' · 预计 ' + clockOf(remMs) + ' 下课';
+    } else if (timer.running) {
+      sub = S.mode === 'class'
+        ? '预计 ' + clockOf(remMs) + ' 上课'
+        : '预计 ' + clockOf(remMs) + ' 结束';
+    } else if (timer.remaining < timer.total && timer.remaining > 0) {
+      sub = '已暂停 · 空格继续';
+    } else if (classPhase) {
+      sub = '共 ' + fmtDur(timer.total) + ' · 下课后休息 ' + fmtDur(phaseMs('break'));
+    } else if (S.mode === 'class') {
+      sub = '共 ' + fmtDur(timer.total) + ' · 结束后开始上课';
+    } else {
+      sub = '共 ' + fmtDur(timer.total);
+    }
+    if (sub !== lastSubStr) {
+      els.subText.textContent = sub;
+      lastSubStr = sub;
+    }
+  }
+
+  function renderBodyClasses() {
+    const b = document.body;
+    b.classList.toggle('running', timer.running);
+    b.classList.toggle('paused', !timer.running && !timer.finished && timer.remaining > 0 && timer.remaining < timer.total);
+    b.classList.toggle('idle', !timer.running && !timer.finished && timer.remaining === timer.total);
+    b.classList.toggle('hide-tenths', !S.showTenths);
+    b.classList.toggle('phase-class', isClassPhase());
+  }
+
+  function renderAll() {
+    renderBodyClasses();
+    renderTimer();
+    renderPresets();
+    renderModeSwitch();
+    broadcastState();
+  }
+
+  /* 时钟 */
+  function renderClock() {
+    const d = new Date();
+    els.wallClock.textContent = pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
+  }
+
+  /* 预设 */
+  const PRESETS = [
+    { label: '1 分钟', min: 1 },
+    { label: '3 分钟', min: 3 },
+    { label: '5 分钟', min: 5 },
+    { label: '10 分钟', min: 10 },
+    { label: '15 分钟', min: 15 },
+    { label: '30 分钟', min: 30 }
+  ];
+
+  const presetsWrap = $('#presets');
+  PRESETS.forEach((p) => {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.dataset.min = p.min;
+    b.textContent = p.label;
+    b.addEventListener('click', () => {
+      setDurationFields(p.min, 0);
+      applyDuration();
+    });
+    presetsWrap.appendChild(b);
+  });
+
+  function renderPresets() {
+    const cur = Number(S.minutes) * 60 + Number(S.seconds);
+    [...presetsWrap.children].forEach((b) => {
+      b.classList.toggle('active', Number(b.dataset.min) * 60 === cur);
+    });
+  }
+
+  /* =========================================================
+   *  5.5 模式切换 & 副屏投送
+   * ========================================================= */
+  const modeSwitch = $('#modeSwitch');
+
+  function renderModeSwitch() {
+    [...modeSwitch.children].forEach((b) => {
+      b.classList.toggle('active', b.dataset.mode === S.mode);
+    });
+
+    const label = S.mode === 'class' ? '休息时长' : '倒计时时长';
+    const el = $('#durationLabel');
+    if (el.dataset.label !== label) {
+      el.dataset.label = label;
+      el.innerHTML = label + '<small>修改后立即复位计时器</small>';
+    }
+    $('#rowLoop').style.display = S.mode === 'class' ? 'none' : '';
+  }
+
+  function setMode(mode) {
+    if (S.mode === mode) return;
+    S.mode = mode;
+    saveSettings();
+    setPhase(mode === 'class' ? 'class' : 'break');
+  }
+
+  /* 把当前状态推给投屏端（约 8 次/秒，投屏端本地插值到每帧） */
+  function broadcastState() {
+    if (IS_MIRROR || !bus.live) return;
+    bus.send({
+      phase: timer.phase,
+      total: timer.total,
+      remaining: timer.remaining,
+      running: timer.running,
+      finished: timer.finished,
+      mode: S.mode,
+      showTenths: !!S.showTenths,
+      theme: S.theme,
+      charset: S.charset,
+      endText: S.endText,
+      classEndText: S.classEndText
+    });
+  }
+
+  function initMirror() {
+    bus.on((p) => {
+      if (!p) return;
+      timer.phase = p.phase;
+      timer.total = p.total;
+      timer.running = p.running;
+      timer.finished = p.finished;
+      timer.remaining = p.remaining;
+      mirrorBase = { remaining: p.remaining, at: performance.now(), running: p.running };
+      S.mode = p.mode;
+      S.showTenths = p.showTenths;
+      S.endText = p.endText;
+      S.classEndText = p.classEndText || p.endText;
+      if (p.theme && p.theme !== S.theme) applyTheme(p.theme);
+      if (p.charset && p.charset !== S.charset) { S.charset = p.charset; setupRain(); }
+      renderBodyClasses();
+      renderTimer();
+    });
+  }
+
+  /* =========================================================
+   *  6. 代码雨
+   * ========================================================= */
+  const canvas = $('#rain');
+  const ctx = canvas.getContext('2d', { alpha: false });
+
+  /* 字符集：默认二进制 0/1（投影时最清楚），可切换片假名或混合
+   * aspect = 单字符的宽度系数，0/1 很窄，列间距要相应收紧才像“数字网格” */
+  const CHARSETS = {
+    binary: {
+      label: '二进制 0/1',
+      chars: '01',
+      aspect: 0.62
+    },
+    kana: {
+      label: '片假名',
+      chars: 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン',
+      aspect: 1
+    },
+    mixed: {
+      label: '0/1 + 片假名',
+      chars: '0101アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン',
+      aspect: 0.82
+    }
+  };
+
+  let GLYPHS = (CHARSETS[S.charset] || CHARSETS.binary).chars.split('');
+
+  let W = 0, H = 0, dpr = 1;
+  let fontSize = 16;
+  let colCount = 0;
+  let drops = [];   // 每列当前行位置（浮点，行单位）
+  let speeds = [];  // 每列下落速度（行/秒）
+  let lastRow = []; // 每列上一次绘制的行号（防止同格叠画）
+  let pulse = 0;    // 结束时的爆发感
+
+  function setupRain() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+
+    canvas.width = Math.floor(W * dpr);
+    canvas.height = Math.floor(H * dpr);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const cs = CHARSETS[S.charset] || CHARSETS.binary;
+    GLYPHS = cs.chars.split('');
+
+    // 字号跟着屏幕走；0/1 比片假名窄，靠 aspect 收紧列间距排出“数字网格”
+    fontSize = Math.max(12, Math.round(Math.min(W, H) / 40));
+    const cellW = fontSize * cs.aspect;
+
+    const density = clamp(Number(S.rainDensity) || 1, 0.3, 1.6);
+    colCount = Math.max(8, Math.floor((W / cellW) * density));
+
+    const colWidth = W / colCount;
+    const rowsVisible = Math.ceil(H / fontSize) + 1;
+    drops = new Array(colCount);
+    speeds = new Array(colCount);
+    lastRow = new Array(colCount);
+    for (let i = 0; i < colCount; i++) {
+      // 打开即有画面：绝大多数列直接分布在可视区域，少量从顶部刚进入
+      drops[i] = Math.random() < 0.12
+        ? -Math.random() * 3
+        : Math.random() * rowsVisible;
+      speeds[i] = (5 + Math.random() * 9) * (Number(S.rainSpeed) || 1);
+      lastRow[i] = Math.floor(drops[i]);
+    }
+    ctx.fillStyle = THEMES[S.theme] ? THEMES[S.theme].bg : '#040806';
+    ctx.fillRect(0, 0, W, H);
+    colWidthRef = colWidth;
+    primeRain();
+  }
+  let colWidthRef = 0;
+
+  const RAIN_FONT = () => fontSize + 'px "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace';
+
+  /* 首帧预铺拖尾：打开即有“已经在下的雨”，而不是空屏 */
+  function primeRain() {
+    const theme = THEMES[S.theme] || THEMES.matrix;
+    const [r, g, b] = theme.rain;
+    ctx.font = RAIN_FONT();
+    ctx.textBaseline = 'top';
+
+    const rows = Math.ceil(H / fontSize) + 1;
+    for (let i = 0; i < colCount; i++) {
+      // 首帧就把每列铺长一些，打开瞬间就是“已经在下的 0/1”
+      const len = Math.min(rows, 14 + ((Math.random() * 26) | 0));
+      const head = Math.floor(drops[i]);
+      for (let k = 0; k < len; k++) {
+        const y = head - k;
+        if (y < 0 || y >= rows) continue;
+        const a = Math.max(0.05, (1 - k / len) * 0.7);
+        ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + a.toFixed(2) + ')';
+        ctx.fillText(GLYPHS[(Math.random() * GLYPHS.length) | 0], i * colWidthRef, y * fontSize);
+      }
+    }
+  }
+
+  let lastDraw = performance.now();
+
+  function drawRain(now) {
+    const dt = Math.min(0.05, (now - lastDraw) / 1000);
+    lastDraw = now;
+
+    const theme = THEMES[S.theme] || THEMES.matrix;
+    const [r, g, b] = theme.rain;
+
+    if (!S.rain) {
+      requestAnimationFrame(drawRain);
+      return;
+    }
+
+    // 拖尾：用带透明度的底色覆盖，形成渐隐（值越小拖尾越长、背景越满）
+    const fadeAlpha = 0.028 + Math.min(0.08, pulse * 0.06);
+    ctx.fillStyle = 'rgba(' + hexToRgb(theme.bg).join(',') + ',' + fadeAlpha.toFixed(3) + ')';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.font = RAIN_FONT();
+    ctx.textBaseline = 'top';
+
+    const rows = Math.ceil(H / fontSize) + 1;
+    const boost = 1 + pulse * 1.6;
+    const glyphCount = GLYPHS.length;
+
+    for (let i = 0; i < colCount; i++) {
+      const x = i * colWidthRef;
+      const y = Math.floor(drops[i]);
+
+      // 60fps 下每帧只前进 0.1~0.2 行；不按行去重的话，
+      // 同一个 0/1 会被叠画十几层，变成糊在一起的“粗体”
+      if (y !== lastRow[i]) {
+        if (y >= 0 && y < rows) {
+          const ch = GLYPHS[(Math.random() * glyphCount) | 0];
+
+          // 尾字符（各列亮度略有差异，画面更自然）
+          const tailAlpha = 0.55 + (speeds[i] % 1) * 0.38;
+          ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + tailAlpha.toFixed(2) + ')';
+          ctx.fillText(ch, x, y * fontSize);
+
+          // 头部高亮
+          const headAlpha = Math.min(1, 0.55 + pulse * 0.45);
+          ctx.fillStyle = 'rgba(' + Math.min(255, r + 90) + ',' +
+                                    Math.min(255, g + 70) + ',' +
+                                    Math.min(255, b + 90) + ',' + headAlpha.toFixed(2) + ')';
+          ctx.fillText(GLYPHS[(Math.random() * glyphCount) | 0], x, y * fontSize);
+        }
+        lastRow[i] = y;
+      }
+
+      drops[i] += speeds[i] * dt * boost;
+
+      if (drops[i] * fontSize > H && Math.random() > 0.972) {
+        drops[i] = -Math.random() * 12;
+        speeds[i] = (5 + Math.random() * 9) * (Number(S.rainSpeed) || 1);
+        lastRow[i] = -9999; // 重生后允许立刻画新字符
+      }
+    }
+
+    pulse *= 0.965;
+    requestAnimationFrame(drawRain);
+  }
+
+  function hexToRgb(hex) {
+    const v = hex.replace('#', '');
+    return [
+      parseInt(v.substring(0, 2), 16),
+      parseInt(v.substring(2, 4), 16),
+      parseInt(v.substring(4, 6), 16)
+    ];
+  }
+
+  /* =========================================================
+   *  7. 主题应用
+   * ========================================================= */
+  function applyTheme(name) {
+    const t = THEMES[name] || THEMES.matrix;
+    const root = document.documentElement;
+    root.style.setProperty('--accent', t.accent);
+    root.style.setProperty('--accent-2', t.accent2);
+    document.body.style.backgroundColor = t.bg;
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', t.bg);
+    S.theme = name;
+
+    const bg = hexToRgb(t.bg);
+    ctx.fillStyle = 'rgb(' + bg.join(',') + ')';
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  /* CSS 变量（与主题无关的固定值） */
+  function installBaseVars() {
+    const root = document.documentElement.style;
+    root.setProperty('--mono', '"SF Mono", "JetBrains Mono", Menlo, Consolas, "Courier New", monospace');
+    root.setProperty('--line', 'rgba(255,255,255,.10)');
+    root.setProperty('--line-strong', 'rgba(255,255,255,.20)');
+    root.setProperty('--muted', 'rgba(234,255,245,.52)');
+    root.setProperty('--danger', '#ff5470');
+  }
+
+  /* =========================================================
+   *  8. 防止休眠 / Wake Lock
+   * ========================================================= */
+  let wakeLock = null;
+  let desktopSleepOn = false;
+
+  async function lockWake() {
+    if (!S.preventSleep) return;
+    if (isDesktop) {
+      if (!desktopSleepOn) {
+        window.desktop.setPreventSleep(true);
+        desktopSleepOn = true;
+      }
+      return;
+    }
+    if ('wakeLock' in navigator && !wakeLock) {
+      try {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
+      } catch (e) { /* 用户拒绝或浏览器不支持，忽略 */ }
+    }
+  }
+
+  function releaseWake() {
+    if (isDesktop) {
+      if (desktopSleepOn) {
+        window.desktop.setPreventSleep(false);
+        desktopSleepOn = false;
+      }
+      return;
+    }
+    if (wakeLock) {
+      wakeLock.release().catch(() => {});
+      wakeLock = null;
+    }
+  }
+
+  /* =========================================================
+   *  9. 全屏 / 专注模式
+   * ========================================================= */
+  let idleHideTimer = null;
+
+  function enterFullscreen() {
+    if (document.fullscreenElement) return;
+    document.documentElement.requestFullscreen().catch(() => {});
+  }
+
+  function exitFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+  }
+
+  async function toggleFullscreen() {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (e) { /* 某些环境禁止全屏 */ }
+  }
+
+  function onFullscreenChange() {
+    const on = !!document.fullscreenElement;
+    document.body.classList.toggle('focus-mode', on);
+    if (on) {
+      revealUI();
+    } else {
+      document.body.classList.add('ui-visible');
+      clearTimeout(idleHideTimer);
+    }
+  }
+
+  function revealUI() {
+    document.body.classList.add('ui-visible');
+    clearTimeout(idleHideTimer);
+    idleHideTimer = setTimeout(() => {
+      if (document.fullscreenElement) document.body.classList.remove('ui-visible');
+    }, 900);
+  }
+
+  /* =========================================================
+   * 10. 设置抽屉
+   * ========================================================= */
+  const drawer = $('#drawer');
+  const scrim = $('#scrim');
+
+  function openDrawer() {
+    drawer.classList.add('open');
+    scrim.classList.add('open');
+  }
+  function closeDrawer() {
+    drawer.classList.remove('open');
+    scrim.classList.remove('open');
+  }
+  function toggleDrawer() {
+    drawer.classList.contains('open') ? closeDrawer() : openDrawer();
+  }
+
+  /* =========================================================
+   * 11. 表单绑定
+   * ========================================================= */
+  const form = {
+    inpClassMinutes: $('#inpClassMinutes'),
+    inpMinutes: $('#inpMinutes'),
+    inpSeconds: $('#inpSeconds'),
+    inpEndText: $('#inpEndText'),
+    inpClassEndText: $('#inpClassEndText'),
+    selSound: $('#selSound'),
+    selStartSound: $('#selStartSound'),
+    inpVolume: $('#inpVolume'),
+    selRepeats: $('#selRepeats'),
+    selWarn: $('#selWarn'),
+    chkTick: $('#chkTick'),
+    chkTenths: $('#chkTenths'),
+    chkLoop: $('#chkLoop'),
+    chkSpeech: $('#chkSpeech'),
+    selSpeechAt: $('#selSpeechAt'),
+    inpSpeechRate: $('#inpSpeechRate'),
+    selTheme: $('#selTheme'),
+    selCharset: $('#selCharset'),
+    chkRain: $('#chkRain'),
+    inpSpeed: $('#inpSpeed'),
+    inpDensity: $('#inpDensity'),
+    chkTop: $('#chkTop'),
+    chkSleep: $('#chkSleep'),
+    chkTray: $('#chkTray')
+  };
+
+  function setDurationFields(min, sec) {
+    S.minutes = clamp(Number(min) || 0, 0, 180);
+    S.seconds = clamp(Number(sec) || 0, 0, 59);
+    form.inpMinutes.value = S.minutes;
+    form.inpSeconds.value = S.seconds;
+    saveSettings();
+  }
+
+  /* 主题下拉 */
+  Object.keys(THEMES).forEach((k) => {
+    const o = document.createElement('option');
+    o.value = k;
+    o.textContent = THEMES[k].label;
+    form.selTheme.appendChild(o);
+  });
+
+  /* 字符集下拉 */
+  Object.keys(CHARSETS).forEach((k) => {
+    const o = document.createElement('option');
+    o.value = k;
+    o.textContent = CHARSETS[k].label;
+    form.selCharset.appendChild(o);
+  });
+
+  function syncForm() {
+    form.inpClassMinutes.value = S.classMinutes;
+    form.inpMinutes.value = S.minutes;
+    form.inpSeconds.value = S.seconds;
+    form.inpEndText.value = S.endText;
+    form.inpClassEndText.value = S.classEndText;
+    form.selSound.value = S.sound;
+    form.selStartSound.value = S.startSound;
+    form.inpVolume.value = S.volume;
+    form.selRepeats.value = String(S.repeats);
+    form.selWarn.value = String(S.warnAt);
+    form.chkTick.checked = !!S.tick;
+    form.chkTenths.checked = !!S.showTenths;
+    form.chkLoop.checked = !!S.loop;
+    form.chkSpeech.checked = !!S.speech;
+    form.selSpeechAt.value = String(S.speechAt);
+    form.inpSpeechRate.value = S.speechRate;
+    form.selTheme.value = S.theme;
+    form.selCharset.value = S.charset;
+    form.chkRain.checked = !!S.rain;
+    form.inpSpeed.value = S.rainSpeed;
+    form.inpDensity.value = S.rainDensity;
+    form.chkTop.checked = !!S.alwaysOnTop;
+    form.chkSleep.checked = !!S.preventSleep;
+    form.chkTray.checked = !!S.closeToTray;
+
+    if (!isDesktop) {
+      form.chkTop.disabled = true;
+      form.chkSleep.disabled = true;
+      form.chkTray.disabled = true;
+      $('#btnMirrorPanel').disabled = true;
+      $('#webOnlyNote').hidden = false;
+    }
+  }
+
+  function bindForm() {
+    form.inpMinutes.addEventListener('input', () => {
+      setDurationFields(form.inpMinutes.value, form.inpSeconds.value);
+      applyDuration();
+    });
+    form.inpSeconds.addEventListener('input', () => {
+      setDurationFields(form.inpMinutes.value, form.inpSeconds.value);
+      applyDuration();
+    });
+
+    form.inpClassMinutes.addEventListener('input', () => {
+      S.classMinutes = clamp(Number(form.inpClassMinutes.value) || 45, 1, 180);
+      saveSettings();
+      if (isClassMode() && timer.phase === 'class') setPhase('class');
+      else renderAll();
+    });
+
+    form.inpEndText.addEventListener('input', () => {
+      S.endText = form.inpEndText.value;
+      saveSettings();
+      if (timer.finished) { lastStatusStr = ''; renderTimer(); }
+    });
+
+    form.inpClassEndText.addEventListener('input', () => {
+      S.classEndText = form.inpClassEndText.value;
+      saveSettings();
+      if (timer.finished) { lastStatusStr = ''; renderTimer(); }
+    });
+
+    form.selSound.addEventListener('change', () => {
+      S.sound = form.selSound.value;
+      saveSettings();
+      playBell(S.sound, 1);
+    });
+
+    form.selStartSound.addEventListener('change', () => {
+      S.startSound = form.selStartSound.value;
+      saveSettings();
+      playBell(S.startSound, 1);
+    });
+
+    $('#btnTestStartSound').addEventListener('click', () => playBell(S.startSound, 1));
+
+    form.inpVolume.addEventListener('input', () => {
+      setVolume(Number(form.inpVolume.value));
+      saveSettings();
+    });
+    form.inpVolume.addEventListener('change', () => playBell(S.sound === 'none' ? 'chime' : S.sound, 1));
+
+    form.selRepeats.addEventListener('change', () => {
+      S.repeats = Number(form.selRepeats.value);
+      saveSettings();
+    });
+
+    form.selWarn.addEventListener('change', () => {
+      S.warnAt = Number(form.selWarn.value);
+      saveSettings();
+      document.body.classList.remove('warn');
+    });
+
+    form.chkTick.addEventListener('change', () => {
+      S.tick = form.chkTick.checked;
+      saveSettings();
+    });
+
+    form.chkSpeech.addEventListener('change', () => {
+      S.speech = form.chkSpeech.checked;
+      saveSettings();
+      if (S.speech) speak('语音播报已开启');
+      else if ('speechSynthesis' in window) speechSynthesis.cancel();
+    });
+
+    form.selSpeechAt.addEventListener('change', () => {
+      S.speechAt = Number(form.selSpeechAt.value);
+      saveSettings();
+    });
+
+    form.inpSpeechRate.addEventListener('input', () => {
+      S.speechRate = Number(form.inpSpeechRate.value);
+      saveSettings();
+    });
+
+    form.chkTenths.addEventListener('change', () => {
+      S.showTenths = form.chkTenths.checked;
+      saveSettings();
+      lastTenthStr = '';
+      renderAll();
+    });
+
+    form.chkLoop.addEventListener('change', () => {
+      S.loop = form.chkLoop.checked;
+      saveSettings();
+    });
+
+    form.selTheme.addEventListener('change', () => {
+      applyTheme(form.selTheme.value);
+      saveSettings();
+    });
+
+    form.selCharset.addEventListener('change', () => {
+      S.charset = form.selCharset.value;
+      saveSettings();
+      setupRain(); // 换字符集要重新铺一次背景
+    });
+
+    form.chkRain.addEventListener('change', () => {
+      S.rain = form.chkRain.checked;
+      saveSettings();
+      if (!S.rain) {
+        const bg = hexToRgb(THEMES[S.theme].bg);
+        ctx.fillStyle = 'rgb(' + bg.join(',') + ')';
+        ctx.fillRect(0, 0, W, H);
+      }
+    });
+
+    form.inpSpeed.addEventListener('input', () => {
+      S.rainSpeed = Number(form.inpSpeed.value);
+      for (let i = 0; i < colCount; i++) speeds[i] = (5 + Math.random() * 9) * S.rainSpeed;
+      saveSettings();
+    });
+
+    form.inpDensity.addEventListener('input', () => {
+      S.rainDensity = Number(form.inpDensity.value);
+      setupRain();
+      saveSettings();
+    });
+
+    form.chkTop.addEventListener('change', () => {
+      S.alwaysOnTop = form.chkTop.checked;
+      if (isDesktop) window.desktop.setAlwaysOnTop(S.alwaysOnTop);
+      saveSettings();
+    });
+
+    form.chkSleep.addEventListener('change', () => {
+      S.preventSleep = form.chkSleep.checked;
+      if (isDesktop) window.desktop.setPreventSleep(S.preventSleep && timer.running);
+      saveSettings();
+    });
+
+    form.chkTray.addEventListener('change', () => {
+      S.closeToTray = form.chkTray.checked;
+      if (isDesktop && window.desktop.setCloseToTray) window.desktop.setCloseToTray(S.closeToTray);
+      saveSettings();
+    });
+
+    $('#btnMirrorPanel').addEventListener('click', () => {
+      if (isDesktop && window.desktop.openMirror) {
+        window.desktop.openMirror();
+        closeDrawer();
+      }
+    });
+  }
+
+  /* =========================================================
+   * 12. 事件
+   * ========================================================= */
+  function bindEvents() {
+    $('#btnStart').addEventListener('click', () => {
+      if (timer.finished) {
+        clearTimeout(loopTimeout);
+        if (isClassMode()) {
+          startPhase(timer.phase === 'class' ? 'break' : 'class');
+        } else {
+          timer.finished = false;
+          document.body.classList.remove('finished');
+          timer.remaining = timer.total;
+          start();
+        }
+      } else {
+        toggle();
+      }
+    });
+    $('#btnReset').addEventListener('click', reset);
+    $('#btnFullscreen').addEventListener('click', toggleFullscreen);
+    $('#btnSettings').addEventListener('click', toggleDrawer);
+    $('#btnCloseDrawer').addEventListener('click', closeDrawer);
+    scrim.addEventListener('click', closeDrawer);
+    $('#btnTestSound').addEventListener('click', () => playBell(S.sound, 1));
+
+    // 模式切换
+    modeSwitch.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-mode]');
+      if (btn) setMode(btn.dataset.mode);
+    });
+
+    // 投屏（桌面端）
+    if (isDesktop && window.desktop.openMirror) {
+      $('#btnMirror').hidden = false;
+      $('#btnMirror').addEventListener('click', () => window.desktop.openMirror());
+    }
+
+    // 桌面端菜单 / 全局快捷键发来的指令
+    if (isDesktop && window.desktop.onCommand) {
+      window.desktop.onCommand((cmd) => {
+        if (cmd === 'toggle') {
+          if (timer.finished) $('#btnStart').click();
+          else toggle();
+        } else if (cmd === 'reset') {
+          reset();
+        } else if (cmd === 'mirror' && window.desktop.openMirror) {
+          window.desktop.openMirror();
+        }
+      });
+    }
+
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+
+    // 只有鼠标真的移动了一段距离才算“活动”：
+    // 进入全屏时浏览器会补发同位置的合成 mousemove，不过滤会把隐藏计时器一直重置
+    let lastMouse = null;
+    document.addEventListener('mousemove', (e) => {
+      if (!document.fullscreenElement) return;
+      if (lastMouse &&
+          Math.abs(e.clientX - lastMouse.x) < 4 &&
+          Math.abs(e.clientY - lastMouse.y) < 4) return;
+      lastMouse = { x: e.clientX, y: e.clientY };
+      revealUI();
+    });
+    document.addEventListener('touchstart', () => {
+      if (document.fullscreenElement) revealUI();
+    }, { passive: true });
+
+    // 全屏时：点击任意空白区域退出全屏（计时继续），点击控件则正常响应控件
+    document.addEventListener('click', (e) => {
+      if (!document.fullscreenElement) return;
+      const el = e.target;
+      // 控件区域：按钮、模式切换、设置抽屉、输入框等不触发退出
+      if (el.closest('.icon-btn, .btn, .chip, .mode-switch, .drawer, .scrim, input, select, label')) return;
+      exitFullscreen();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      const tag = (e.target && e.target.tagName) || '';
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+      if (e.key === 'Escape') {
+        if (drawer.classList.contains('open')) { closeDrawer(); return; }
+        if (document.fullscreenElement) return; // 浏览器自己处理
+        return;
+      }
+      if (typing) return;
+
+      if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault();
+        $('#btnStart').click();
+      } else if (e.key === 'r' || e.key === 'R') {
+        reset();
+      } else if (e.key === 'f' || e.key === 'F') {
+        toggleFullscreen();
+      } else if (e.key === 's' || e.key === 'S') {
+        toggleDrawer();
+      } else if ((e.key === 'm' || e.key === 'M') && isDesktop && window.desktop.openMirror) {
+        window.desktop.openMirror();
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      setupRain();
+    });
+
+    // 切回页面时校准（后台标签页被节流也不影响准确性）
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && timer.running) {
+        const rem = timer.endAt - performance.now();
+        if (rem <= 0) { timer.remaining = 0; finish(); }
+        else timer.remaining = rem;
+      }
+    });
+  }
+
+  /* =========================================================
+   * 13. 初始化
+   * ========================================================= */
+  function init() {
+    installBaseVars();
+    document.body.classList.add(isDesktop ? (window.desktop.platform === 'darwin' ? 'is-mac' : 'is-win') : 'is-web');
+
+    applyTheme(S.theme || 'matrix');
+    setupRain();
+
+    // 投屏端：只负责显示，不绑定任何控件
+    if (IS_MIRROR) {
+      document.body.classList.add('mirror');
+      document.title = '投屏端 · 课件休息计时';
+      initMirror();
+      requestAnimationFrame((t) => {
+        lastDraw = t;
+        drawRain(t);
+      });
+      requestAnimationFrame(frame);
+      return;
+    }
+
+    timer.phase = isClassMode() ? 'class' : 'break';
+    timer.total = phaseMs(timer.phase);
+    timer.remaining = timer.total;
+
+    syncForm();
+    bindForm();
+    bindEvents();
+    renderAll();
+
+    renderClock();
+    setInterval(renderClock, 1000);
+
+    // 状态广播：投屏端据此插值
+    setInterval(broadcastState, 120);
+
+    if (isDesktop) {
+      window.desktop.setAlwaysOnTop(!!S.alwaysOnTop);
+      window.desktop.setPreventSleep(false);
+      if (window.desktop.setCloseToTray) window.desktop.setCloseToTray(!!S.closeToTray);
+    }
+
+    requestAnimationFrame((t) => {
+      lastDraw = t;
+      drawRain(t);
+    });
+    requestAnimationFrame(frame);
+
+    // 调试钩子（仅 ?debug=1 时暴露，方便自动化测试驱动状态机）
+    if (/[?&]debug=1/.test(location.search)) {
+      window.__cbt = { timer, S, setPhase, startPhase, start, pause, reset, setMode };
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+</body>
+</html>

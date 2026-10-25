@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.cache/
+.tmp-run/
+.tmp-chrome/
+.tmpx/
+xipsidif

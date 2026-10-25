@@ -1,0 +1,74 @@
+{
+  "name": "class-break-timer",
+  "productName": "课件休息计时",
+  "version": "1.0.0",
+  "description": "教师课件休息倒计时工具：代码雨动态背景 + 精确秒级倒计时 + 下课铃声",
+  "main": "main.js",
+  "author": {
+    "name": "wuqy"
+  },
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging",
+    "pack:mac": "electron-builder --mac",
+    "pack:win": "electron-builder --win --x64",
+    "pack:all": "electron-builder -m -w --x64"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.wuqy.classbreaktimer",
+    "productName": "课件休息计时",
+    "copyright": "Copyright © 2026",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "index.html",
+      "main.js",
+      "preload.js",
+      "package.json",
+      "build/icon.png",
+      "!dist/**",
+      "!node_modules/**",
+      "!docs/**",
+      "!.github/**",
+      "!scripts/**"
+    ],
+    "artifactName": "ClassBreakTimer-${version}-${os}-${arch}.${ext}",
+    "mac": {
+      "category": "public.app-category.education",
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ],
+      "darkModeSupport": true,
+      "hardenedRuntime": false
+    },
+    "dmg": {
+      "title": "课件休息计时"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "课件休息计时",
+      "artifactName": "ClassBreakTimer-${version}-win-x64-setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "ClassBreakTimer-${version}-win-x64-portable.${ext}"
+    }
+  }
+}
