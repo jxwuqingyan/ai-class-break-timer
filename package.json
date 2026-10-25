@@ -55,7 +55,8 @@
     },
     "win": {
       "target": [
-        { "target": "portable", "arch": ["x64"] }
+        { "target": "portable", "arch": ["x64"] },
+        { "target": "zip", "arch": ["arm64"] }
       ]
     },
     "portable": {

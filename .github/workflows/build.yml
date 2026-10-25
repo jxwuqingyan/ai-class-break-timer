@@ -36,6 +36,7 @@ jobs:
             artifact: win-packages
             glob: |
               dist/*.exe
+              dist/*.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
